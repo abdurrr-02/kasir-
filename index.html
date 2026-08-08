@@ -949,15 +949,23 @@
       renderHost.appendChild(strukEl);
       document.body.appendChild(renderHost);
 
-      // RENDER KE CANVAS -> PNG (html2canvas dibawa oleh pustaka html2pdf.bundle.min.js)
-      const canvas = await html2canvas(strukEl, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-        useCORS: true
-      });
+      // RENDER KE CANVAS -> PNG lewat API resmi html2pdf (worker.toCanvas()),
+      // ini lebih andal daripada memanggil window.html2canvas langsung,
+      // karena versi bundle CDN tidak selalu mengekspos html2canvas secara global.
+      if (typeof html2pdf === 'undefined') {
+        throw new Error('Pustaka html2pdf gagal dimuat (cek koneksi internet / pemblokir skrip).');
+      }
+
+      const canvas = await html2pdf()
+        .set({ html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true } })
+        .from(strukEl)
+        .toCanvas()
+        .get('canvas');
+
+      if (!canvas) throw new Error('Gagal membuat canvas dari struk.');
 
       const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
-      if (!pngBlob) throw new Error('Gagal membuat PNG dari struk');
+      if (!pngBlob) throw new Error('Gagal membuat PNG dari struk (toBlob mengembalikan null).');
 
       const fileName = `Struk_${custName.replace(/\s+/g, '_')}.png`;
       const pngFile = new File([pngBlob], fileName, { type: 'image/png' });
@@ -994,9 +1002,12 @@
       }
 
     } catch (err) {
-      console.error('Error saat share file:', err);
-      if (err && err.name !== 'AbortError') {
-        // Jika gagal (bukan karena user batal share), fallback kirim pesan teks WA biasa
+      console.error('Error saat membuat/mengirim PNG struk:', err);
+      if (err && err.name === 'AbortError') {
+        // Pengguna membatalkan sendiri dari share sheet, tidak perlu alert error.
+      } else {
+        alert('Gagal membuat gambar PNG struk.\nDetail: ' + (err && err.message ? err.message : err) + '\n\nAkan membuka WhatsApp dengan teks struk saja sebagai cadangan.');
+        // Fallback: kirim pesan teks WA biasa (tanpa gambar)
         let phone = document.getElementById('kasirWaNumber').value.trim().replace(/[^0-9]/g, '');
         if (phone.startsWith('0')) phone = '62' + phone.slice(1);
         const url = phone
